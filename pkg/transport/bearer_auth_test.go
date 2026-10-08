@@ -16,7 +16,7 @@ func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) 
 	return fn(req)
 }
 
-func TestUserAgentTransport_RoundTrip_movesOAuthTokenToBearerHeader(t *testing.T) {
+func TestUnitUserAgentTransport_RoundTrip_movesOAuthTokenToBearerHeader(t *testing.T) {
 	tests := []struct {
 		name  string
 		token string
