@@ -74,3 +74,62 @@ func TestUnitUserAgentTransport_RoundTrip_movesOAuthTokenToBearerHeader(t *testi
 		})
 	}
 }
+
+type closeTrackingBody struct {
+	io.Reader
+	closed bool
+}
+
+func (b *closeTrackingBody) Close() error {
+	b.closed = true
+	return nil
+}
+
+func TestUnitUserAgentTransport_RoundTrip_keepsRewrittenBodyReplayable(t *testing.T) {
+	// Given
+	request, err := http.NewRequest(http.MethodPost, "https://slack.com/api/conversations.history", strings.NewReader("channel=C123&token=xoxp-test-token"))
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	originalBody := &closeTrackingBody{Reader: request.Body}
+	request.Body = originalBody
+
+	var sent *http.Request
+	transport := NewUserAgentTransport(roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		sent = req
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil
+	}), "test-agent", nil, zap.NewNop())
+
+	// When
+	response, err := transport.RoundTrip(request)
+	if err != nil {
+		t.Fatalf("round trip: %v", err)
+	}
+	defer response.Body.Close()
+
+	// Then
+	if !originalBody.closed {
+		t.Errorf("original request body was not closed")
+	}
+	if sent.GetBody == nil {
+		t.Fatalf("GetBody is nil, want a replayable body")
+	}
+	replay, err := sent.GetBody()
+	if err != nil {
+		t.Fatalf("GetBody: %v", err)
+	}
+	replayed, err := io.ReadAll(replay)
+	if err != nil {
+		t.Fatalf("read replayed body: %v", err)
+	}
+	if string(replayed) != "channel=C123" {
+		t.Errorf("replayed body = %q, want %q", replayed, "channel=C123")
+	}
+	if sent.ContentLength != int64(len(replayed)) {
+		t.Errorf("ContentLength = %d, replayed body length = %d", sent.ContentLength, len(replayed))
+	}
+}

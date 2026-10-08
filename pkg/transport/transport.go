@@ -73,6 +73,7 @@ func (t *UserAgentTransport) RoundTrip(req *http.Request) (*http.Response, error
 		mediaType, _, err := mime.ParseMediaType(clonedReq.Header.Get("Content-Type"))
 		if err == nil && mediaType == "application/x-www-form-urlencoded" {
 			body, err := io.ReadAll(clonedReq.Body)
+			clonedReq.Body.Close()
 			if err != nil {
 				return nil, fmt.Errorf("read request body: %w", err)
 			}
@@ -87,6 +88,9 @@ func (t *UserAgentTransport) RoundTrip(req *http.Request) (*http.Response, error
 					body = []byte(form.Encode())
 					clonedReq.Body = io.NopCloser(bytes.NewReader(body))
 					clonedReq.ContentLength = int64(len(body))
+					clonedReq.GetBody = func() (io.ReadCloser, error) {
+						return io.NopCloser(bytes.NewReader(body)), nil
+					}
 				}
 			}
 		}
